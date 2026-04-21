@@ -23,6 +23,8 @@ class CatWindow(QLabel):
         self._pixmap: QPixmap | None = None
         self._on_click: Callable[[], None] | None = None
         self._rotation: int = 0
+        self._show_zzz: bool = False
+        self._bubble_text: str | None = None
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -101,6 +103,49 @@ class CatWindow(QLabel):
             )
             canvas.paste(pil_image, (0, 0), pil_image)
             pil_image = canvas
+            if self._show_zzz:
+                from PIL import ImageFont
+                draw2 = ImageDraw.Draw(pil_image)
+                try:
+                    font_s = ImageFont.load_default(size=9)
+                    font_m = ImageFont.load_default(size=12)
+                    font_l = ImageFont.load_default(size=16)
+                except TypeError:
+                    font_s = font_m = font_l = ImageFont.load_default()
+                draw2.text((70, 55), "z", font=font_s, fill=(160, 160, 255, 180))
+                draw2.text((76, 42), "z", font=font_m, fill=(180, 180, 255, 210))
+                draw2.text((83, 26), "Z", font=font_l, fill=(200, 200, 255, 240))
+            if self._bubble_text:
+                from PIL import ImageFont
+                try:
+                    font = ImageFont.load_default(size=10)
+                except TypeError:
+                    font = ImageFont.load_default()
+                draw_b = ImageDraw.Draw(pil_image)
+                bbox = draw_b.textbbox((0, 0), self._bubble_text, font=font)
+                tw = bbox[2] - bbox[0]
+                th = bbox[3] - bbox[1]
+                pad = 4
+                bw = tw + pad * 2
+                bh = th + pad * 2
+                bx = max(0, min(128 - bw, 64 - bw // 2))
+                by = 4
+                draw_b.rectangle(
+                    [bx, by, bx + bw, by + bh],
+                    fill=(255, 255, 255, 220),
+                    outline=(100, 100, 100, 200),
+                )
+                tail_x = min(bx + bw - 4, max(bx + 4, 64))
+                draw_b.polygon(
+                    [(tail_x - 4, by + bh), (tail_x + 4, by + bh), (tail_x, by + bh + 6)],
+                    fill=(255, 255, 255, 220),
+                )
+                draw_b.text(
+                    (bx + pad, by + pad),
+                    self._bubble_text,
+                    font=font,
+                    fill=(40, 40, 40, 255),
+                )
         if self._rotation in _TRANSPOSE_MAP:
             pil_image = pil_image.transpose(_TRANSPOSE_MAP[self._rotation])
         data = pil_image.tobytes("raw", "RGBA")
@@ -110,6 +155,12 @@ class CatWindow(QLabel):
 
     def set_rotation(self, degrees: int) -> None:
         self._rotation = degrees % 360
+
+    def set_zzz(self, visible: bool) -> None:
+        self._show_zzz = visible
+
+    def set_bubble(self, text: str | None) -> None:
+        self._bubble_text = text
 
     def move_to(self, x: int, y: int) -> None:
         self.move(x, y)

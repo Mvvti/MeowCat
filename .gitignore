@@ -25,3 +25,7 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# Local project helpers (do not commit)
+codex-tasks/
+workflow/

@@ -9,8 +9,20 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QCursor
 
 from src.animator import Animator
+from src.food_window import FoodWindow
 from src.win_detector import find_window_edge_at
 from src.window import CatWindow
+
+_BUBBLE_TEXTS = [
+    "Miau!",
+    "Mrrr...",
+    "...",
+    "Głodny!",
+    "Hej!",
+    "*mruczy*",
+    "Miau?",
+    "*ziewa*",
+]
 
 
 class CatBehavior:
@@ -72,6 +84,36 @@ class CatBehavior:
         self._fullscreen_timer = QTimer()
         self._fullscreen_timer.timeout.connect(self._check_fullscreen)
         self._fullscreen_timer.start(2000)
+
+        self._last_hour_reaction: int = -1
+        self._state_before_hourly: str = "idle"
+
+        self._hourly_timer = QTimer()
+        self._hourly_timer.timeout.connect(self._check_hourly)
+        self._hourly_timer.start(30000)
+
+        self._bubble_timer = QTimer()
+        self._bubble_timer.setSingleShot(True)
+        self._bubble_timer.timeout.connect(self._show_bubble)
+        self._bubble_timer.start(random.randint(20000, 40000))
+
+        self._fatigue: float = 0.0
+
+        self._fatigue_timer = QTimer()
+        self._fatigue_timer.timeout.connect(self._update_fatigue)
+        self._fatigue_timer.start(5000)
+
+        self._food_window = FoodWindow()
+        self._food_x: float = 0.0
+        self._food_spawn_timer = QTimer()
+        self._food_spawn_timer.setSingleShot(True)
+        self._food_spawn_timer.timeout.connect(self._spawn_food)
+        self._food_spawn_timer.start(random.randint(60000, 120000))
+
+        self._window_sit_timer = QTimer()
+        self._window_sit_timer.setSingleShot(True)
+        self._window_sit_timer.timeout.connect(self._try_sit_on_window)
+        self._window_sit_timer.start(random.randint(90000, 180000))
 
         self._window.set_on_click(self._on_cat_clicked)
         self._window.move_to(int(self._x), int(self._y))
@@ -148,6 +190,26 @@ class CatBehavior:
             anim = random.choice(["paw_att_right", "paw_att_left"])
             self._animator.play(anim)
             QTimer.singleShot(1000, self._end_attack)
+        elif state == "seek_food":
+            self._velocity_x = 0.0
+            dx = self._food_x - self._x
+            if dx >= 0:
+                self._chase_dir = "right"
+                self._animator.play("walk_right")
+            else:
+                self._chase_dir = "left"
+                self._animator.play("walk_left")
+        elif state == "eat_food":
+            self._velocity_x = 0.0
+            self._animator.play("eat_right")
+            QTimer.singleShot(2000, self._end_eat)
+        elif state == "on_window_sit":
+            self._velocity_x = 0.0
+            self._animator.play("rest_sit")
+        elif state == "hourly":
+            self._velocity_x = 0.0
+            self._animator.play("meow_sit")
+            QTimer.singleShot(2500, self._end_hourly)
         else:
             raise ValueError(f"Unknown state: {state}")
 
@@ -222,6 +284,21 @@ class CatBehavior:
             if self._y >= self._ground_y - 128:
                 self._y = float(self._ground_y - 128)
                 self._enter_state("walk_left")
+        elif self._state == "seek_food":
+            self._y = self._ground_y - 128
+            dx = self._food_x - self._x
+            if abs(dx) < 32:
+                self._enter_state("eat_food")
+            elif dx > 0:
+                self._x += 2
+                if self._chase_dir != "right":
+                    self._chase_dir = "right"
+                    self._animator.play("walk_right")
+            else:
+                self._x -= 2
+                if self._chase_dir != "left":
+                    self._chase_dir = "left"
+                    self._animator.play("walk_left")
         elif self._state == "chase":
             self._y = self._ground_y - 128
             cursor = QCursor.pos()
@@ -273,6 +350,10 @@ class CatBehavior:
             "clicked",
             "chase",
             "attack",
+            "seek_food",
+            "eat_food",
+            "on_window_sit",
+            "hourly",
             "climb_right_wall",
             "walk_ceiling_left",
             "descend_left_wall",
@@ -284,11 +365,25 @@ class CatBehavior:
             return
 
         if self._state in ("walk_right", "walk_left"):
-            next_state = random.choice(
-                ["walk_right", "walk_left", "idle", "sit", "yawn", "attack"]
-            )
+            if self._fatigue > 66:
+                next_state = random.choice(["sit", "sit", "sleep", "yawn", "idle"])
+            elif self._fatigue < 33:
+                next_state = random.choice(
+                    ["walk_right", "walk_right", "walk_left", "walk_left", "idle", "attack"]
+                )
+            else:
+                next_state = random.choice(
+                    ["walk_right", "walk_left", "idle", "sit", "yawn", "attack"]
+                )
         elif self._state in ("idle", "sit"):
-            next_state = random.choice(["walk_right", "walk_left", "sleep"])
+            if self._fatigue > 66:
+                next_state = random.choice(["sleep", "sleep", "sit"])
+            elif self._fatigue < 33:
+                next_state = random.choice(
+                    ["walk_right", "walk_left", "walk_right", "walk_left"]
+                )
+            else:
+                next_state = random.choice(["walk_right", "walk_left", "sleep"])
         elif self._state == "sleep":
             next_state = "idle"
         elif self._state == "yawn":
@@ -305,6 +400,10 @@ class CatBehavior:
     def _end_attack(self) -> None:
         if self._state == "attack":
             self._enter_state("idle")
+
+    def _end_hourly(self) -> None:
+        if self._state == "hourly":
+            self._enter_state(self._state_before_hourly)
 
     def _check_window_edge(self) -> None:
         if self._state not in ("walk_right", "walk_left"):
@@ -359,11 +458,18 @@ class CatBehavior:
             self._enter_state("walk_right")
 
     def _is_fullscreen_active(self) -> bool:
+        _SKIP_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "DV2ControlHost"}
         try:
             hwnd = ctypes.windll.user32.GetForegroundWindow()
             if not hwnd:
                 return False
             if hwnd == int(self._window.winId()):
+                return False
+            if hwnd == int(self._food_window.winId()):
+                return False
+            buf = ctypes.create_unicode_buffer(256)
+            ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
+            if buf.value in _SKIP_CLASSES:
                 return False
             rect = ctypes.wintypes.RECT()
             ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
@@ -387,3 +493,80 @@ class CatBehavior:
             if self._hidden_by_fullscreen:
                 self._hidden_by_fullscreen = False
                 self._window.show()
+
+    def _check_hourly(self) -> None:
+        from datetime import datetime
+        now = datetime.now()
+        if now.minute != 0:
+            return
+        if now.hour == self._last_hour_reaction:
+            return
+        self._last_hour_reaction = now.hour
+        if self._state in (
+            "climb_up", "climb_down", "walk_right_on_win", "walk_left_on_win",
+            "clicked", "hourly",
+            "climb_right_wall", "walk_ceiling_left", "descend_left_wall",
+            "climb_left_wall", "walk_ceiling_right", "descend_right_wall",
+        ):
+            return
+        self._state_before_hourly = self._state
+        self._enter_state("hourly")
+
+    def _show_bubble(self) -> None:
+        if self._state in ("walk_right", "walk_left", "idle", "sit", "sleep"):
+            text = random.choice(_BUBBLE_TEXTS)
+            self._window.set_bubble(text)
+            QTimer.singleShot(3000, self._hide_bubble)
+        self._bubble_timer.start(random.randint(20000, 40000))
+
+    def _hide_bubble(self) -> None:
+        self._window.set_bubble(None)
+
+    def _update_fatigue(self) -> None:
+        if self._state in ("walk_right", "walk_left"):
+            self._fatigue = min(100.0, self._fatigue + 3.0)
+        elif self._state == "chase":
+            self._fatigue = min(100.0, self._fatigue + 5.0)
+        elif self._state == "sleep":
+            self._fatigue = max(0.0, self._fatigue - 8.0)
+        elif self._state in ("idle", "sit", "yawn"):
+            self._fatigue = max(0.0, self._fatigue - 3.0)
+
+    def _spawn_food(self) -> None:
+        if self._state not in ("walk_right", "walk_left", "idle", "sit", "sleep"):
+            self._food_spawn_timer.start(random.randint(60000, 120000))
+            return
+        self._food_x = float(random.randint(
+            self._screen_offset_x + 48,
+            self._screen_offset_x + self._screen_width - 48
+        ))
+        self._food_window.show_at(int(self._food_x), self._ground_y - 48)
+        self._enter_state("seek_food")
+
+    def _end_eat(self) -> None:
+        if self._state == "eat_food":
+            self._food_window.hide()
+            self._fatigue = max(0.0, self._fatigue - 30.0)
+            self._food_spawn_timer.start(random.randint(60000, 120000))
+            self._enter_state("idle")
+
+    def _try_sit_on_window(self) -> None:
+        from src.win_detector import get_windows
+        candidates = [
+            w for w in get_windows()
+            if self._screen_offset_y + 100 < w["rect"][1] < self._ground_y - 200
+            and w["rect"][2] - w["rect"][0] > 200
+        ]
+        if candidates and self._state in ("walk_right", "walk_left", "idle", "sit"):
+            win = random.choice(candidates)
+            left, top, right, _ = win["rect"]
+            self._x = float(left + (right - left) // 2 - 64)
+            self._y = float(top - 128)
+            self._enter_state("on_window_sit")
+            QTimer.singleShot(random.randint(8000, 15000), self._leave_window_sit)
+        self._window_sit_timer.start(random.randint(90000, 180000))
+
+    def _leave_window_sit(self) -> None:
+        if self._state == "on_window_sit":
+            self._y = float(self._ground_y - 128)
+            self._enter_state("idle")

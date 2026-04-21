@@ -112,3 +112,38 @@
 - Status: ✅ ukończony
 - Co zostało zrobione: Nowy stan "attack" z losowym paw_att_right/left, automatyczny powrót do idle po 1s przez _end_attack. Dodany do losowych przejść z walk i list ignorowanych stanów.
 - Pliki zmienione: src/behavior.py
+
+## Etap 22 — Dymek snu (Zzz)
+- Status: ✅ ukończony
+- Co zostało zrobione: _show_zzz flag w CatWindow, set_zzz(), rysowanie "z z Z" (rosnące litery, kolor jasnoniebieski) na klatce PIL gdy rotation==0. behavior.py: reset w _enter_state, set_zzz(True) w stanie sleep.
+- Pliki zmienione: src/window.py, src/behavior.py
+- Następny etap: Reakcja na godziny
+
+## Etap 23 — Reakcja na godziny
+- Status: ✅ ukończony
+- Co zostało zrobione: Stan "hourly" z animacją meow_sit (2.5s), powrót do poprzedniego stanu. Timer co 30s sprawdza minute==0, flaga _last_hour_reaction blokuje powtórzenia. Ignoruje stany newralgiczne.
+- Pliki zmienione: src/behavior.py
+- Następny etap: Dymki z tekstem
+
+## Etap 24 — Dymki z tekstem
+- Status: ✅ ukończony
+- Co zostało zrobione: _bubble_text w CatWindow, set_bubble(), rysowanie dymka komiksowego (białe tło, szara ramka, trójkątny ogon) w set_frame gdy rotation==0. behavior.py: _BUBBLE_TEXTS, single-shot timer co 20-40s, _show_bubble/_hide_bubble.
+- Pliki zmienione: src/window.py, src/behavior.py
+- Następny etap: Nastrój/zmęczenie
+
+## Etap 25 — Nastrój / zmęczenie
+- Status: ✅ ukończony
+- Co zostało zrobione: _fatigue (0-100), timer co 5s (_update_fatigue). Chodzenie +3, chase +5, sen -8, idle/sit/yawn -3. _random_state_change z trzema progami: zmęczony (>66) → sit/sleep, wypoczęty (<33) → walk/attack, normalny → bez zmian.
+- Pliki zmienione: src/behavior.py
+- Następny etap: Jedzenie
+
+## Etap 26 — Jedzenie (rybka)
+- Status: ✅ ukończony
+- Co zostało zrobione: FoodWindow (src/food_window.py) — ładowanie JPG, usunięcie białego tła, 48x48. behavior.py: stany seek_food/eat_food, _spawn_food co 60-120s, _end_eat (fatigue -30, ukrycie rybki).
+- Pliki zmienione: src/food_window.py (nowy), src/behavior.py
+- Następny etap: Siadanie na górze okna
+
+## Etap 27 — Siadanie na górze okna
+- Status: ✅ ukończony
+- Co zostało zrobione: Stan on_window_sit, timer co 90-180s, _try_sit_on_window (filtruje okna, teleportuje kota na top-128), _leave_window_sit po 8-15s (powrót na ziemię).
+- Pliki zmienione: src/behavior.py
